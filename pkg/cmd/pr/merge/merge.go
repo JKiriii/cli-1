@@ -131,6 +131,16 @@ func mergeRun(opts *MergeOptions) error {
 		return err
 	}
 
+	if opts.SelectorArg == "" {
+		localBranchLastCommit, err := git.LastCommit()
+		if err == nil {
+			if localBranchLastCommit.Sha != pr.Commits.Nodes[0].Commit.Oid {
+				fmt.Fprintf(opts.IO.ErrOut,
+					"%s Pull request #%d (%s) has diverged from local branch\n", cs.Yellow("!"), pr.Number, pr.Title)
+			}
+		}
+	}
+
 	if pr.Mergeable == "CONFLICTING" {
 		fmt.Fprintf(opts.IO.ErrOut, "%s Pull request #%d (%s) has conflicts and isn't mergeable\n", cs.Red("!"), pr.Number, pr.Title)
 		return cmdutil.SilentError
@@ -180,7 +190,7 @@ func mergeRun(opts *MergeOptions) error {
 			case api.PullRequestMergeMethodSquash:
 				action = "Squashed and merged"
 			}
-			fmt.Fprintf(opts.IO.ErrOut, "%s %s pull request #%d (%s)\n", cs.Magenta("✔"), action, pr.Number, pr.Title)
+			fmt.Fprintf(opts.IO.ErrOut, "%s %s pull request #%d (%s)\n", cs.SuccessIconWithColor(cs.Magenta), action, pr.Number, pr.Title)
 		}
 	} else if !opts.IsDeleteBranchIndicated && opts.InteractiveMode && !crossRepoPR {
 		err := prompt.SurveyAskOne(&survey.Confirm{
@@ -243,7 +253,7 @@ func mergeRun(opts *MergeOptions) error {
 	}
 
 	if isTerminal {
-		fmt.Fprintf(opts.IO.ErrOut, "%s Deleted branch %s%s\n", cs.Red("✔"), cs.Cyan(pr.HeadRefName), branchSwitchString)
+		fmt.Fprintf(opts.IO.ErrOut, "%s Deleted branch %s%s\n", cs.SuccessIconWithColor(cs.Red), cs.Cyan(pr.HeadRefName), branchSwitchString)
 	}
 
 	return nil

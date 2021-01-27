@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/cli/cli/internal/config"
 	"github.com/cli/cli/internal/ghrepo"
@@ -251,20 +252,38 @@ func TestIssueView_tty_Preview(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			http := &httpmock.Registry{}
-			defer http.Verify(t)
+			io, _, stdout, stderr := iostreams.Test()
+			io.SetStdoutTTY(true)
+			io.SetStdinTTY(true)
+			io.SetStderrTTY(true)
 
-			http.Register(httpmock.GraphQL(`query IssueByNumber\b`), httpmock.FileResponse(tc.fixture))
+			httpReg := &httpmock.Registry{}
+			defer httpReg.Verify(t)
 
-			output, err := runCommand(http, true, "123")
-			if err != nil {
-				t.Errorf("error running `issue view`: %v", err)
+			httpReg.Register(httpmock.GraphQL(`query IssueByNumber\b`), httpmock.FileResponse(tc.fixture))
+
+			opts := ViewOptions{
+				IO: io,
+				Now: func() time.Time {
+					t, _ := time.Parse(time.RFC822, "03 Nov 20 15:04 UTC")
+					return t
+				},
+				HttpClient: func() (*http.Client, error) {
+					return &http.Client{Transport: httpReg}, nil
+				},
+				BaseRepo: func() (ghrepo.Interface, error) {
+					return ghrepo.New("OWNER", "REPO"), nil
+				},
+				SelectorArg: "123",
 			}
 
-			assert.Equal(t, "", output.Stderr())
+			err := viewRun(&opts)
+			assert.NoError(t, err)
+
+			assert.Equal(t, "", stderr.String())
 
 			//nolint:staticcheck // prefer exact matchers over ExpectLines
-			test.ExpectLines(t, output.String(), tc.expectedOutputs...)
+			test.ExpectLines(t, stdout.String(), tc.expectedOutputs...)
 		})
 	}
 }
@@ -371,7 +390,7 @@ func TestIssueView_tty_Comments(t *testing.T) {
 			expectedOutputs: []string{
 				`some title`,
 				`some body`,
-				`———————— Not showing 4 comments ————————`,
+				`———————— Not showing 5 comments ————————`,
 				`marseilles \(Collaborator\) • Jan  1, 2020 • Newest comment`,
 				`Comment 5`,
 				`Use --comments to view the full conversation`,
@@ -396,6 +415,7 @@ func TestIssueView_tty_Comments(t *testing.T) {
 				`Comment 3`,
 				`loislane \(Owner\) • Jan  1, 2020`,
 				`Comment 4`,
+				`sam-spam • This comment has been marked as spam`,
 				`marseilles \(Collaborator\) • Jan  1, 2020 • Newest comment`,
 				`Comment 5`,
 				`View this issue on GitHub: https://github.com/OWNER/REPO/issues/123`,
@@ -443,7 +463,7 @@ func TestIssueView_nontty_Comments(t *testing.T) {
 				`title:\tsome title`,
 				`state:\tOPEN`,
 				`author:\tmarseilles`,
-				`comments:\t5`,
+				`comments:\t6`,
 				`some body`,
 			},
 		},
